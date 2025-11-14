@@ -1,0 +1,119 @@
+#installation needed --> pip install sqlalchemy  pip install sqlite
+#to connect the sql database to the fastapi
+#for run the code you must have install the sqlite from the official page
+
+from fastapi import FastAPI, HTTPException, Depends
+from sqlalchemy import Column, Integer, String, create_engine
+from sqlalchemy.orm import declarative_base, sessionmaker, Session
+from pydantic import BaseModel
+
+# -----------------------------
+# FastAPI App
+# -----------------------------
+app = FastAPI()
+
+# -----------------------------
+# Database Setup
+# -----------------------------
+DATABASE_URL = "sqlite:///./product.db"
+
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False}
+)
+
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+
+Base = declarative_base()
+
+
+# -----------------------------
+# SQLAlchemy Model
+# -----------------------------
+class Product(Base):
+    __tablename__ = "product"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String)
+    detail = Column(String)
+    amount = Column(Integer)
+
+
+# -----------------------------
+# Create DB Tables
+# -----------------------------
+Base.metadata.create_all(bind=engine)
+
+
+# -----------------------------
+# Pydantic Model
+# -----------------------------
+class ProductModel(BaseModel):
+    product_name: str
+    product_detail: str
+    product_amount: int
+
+
+# -----------------------------
+# DB Dependency
+# -----------------------------
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+# -----------------------------
+# API Routes
+# -----------------------------
+@app.get("/")
+def read_products(db: Session = Depends(get_db)):
+    return db.query(Product).all()
+
+
+@app.post("/")
+def add_product(product: ProductModel, db: Session = Depends(get_db)):
+    product_model = Product(
+        name=product.product_name,
+        detail=product.product_detail,
+        amount=product.product_amount
+    )
+    db.add(product_model)
+    db.commit()
+    db.refresh(product_model)
+    return product_model
+
+@app.put("/{product_id}")
+def update_product(product_id: int, product: ProductModel, db: Session = Depends(get_db)):
+    product_model = db.query(Product).filter(Product.id == product_id).first()
+    if product_model is None:
+        raise HTTPException(status_code=404, detail=f"Product {product_id} not found")
+    product_model.name = product.product_name
+    product_model.detail = product.product_detail
+    product_model.amount = product.product_amount
+    db.commit()
+    db.refresh(product_model)
+
+    return product_model
+
+
+@app.delete("/{product_id}")
+def delete_product(product_id: int, db: Session = Depends(get_db)):
+    product_model = db.query(Product).filter(Product.id == product_id).first()
+
+    if product_model is None:
+        raise HTTPException(status_code=404, detail=f"Product {product_id} not found")
+
+    db.delete(product_model)
+    db.commit()
+
+    return {"message": f"Product {product_id} deleted successfully"}
+
+
+
+
+
+
+
